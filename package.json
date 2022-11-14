@@ -1,0 +1,29 @@
+{
+  "name": "s7client",
+  "version": "0.0.0",
+  "description": "S7Client Node.JS wrapper based on the node-snap7 library",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jozo132/S7Client.git"
+  },
+  "keywords": [
+    "S7Client",
+    "Snap7",
+    "Node.JS",
+    "Siemens",
+    "S7"
+  ],
+  "author": "J.Vovk",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Jozo132/S7Client/issues"
+  },
+  "homepage": "https://github.com/Jozo132/S7Client#readme",
+  "dependencies": {
+    "node-snap7": "^1.0.6"
+  }
+}
