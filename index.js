@@ -855,6 +855,9 @@ const PLC_handler = PLC => {
             if (!name) return { error: `Variable [${i + 1}/${variables.length}] parameter "name" is not defined!` }
             if (value === undefined) return { error: `Variable [${i + 1}/${variables.length}] parameter "value" is not defined!` }
         }
+        
+        // TODO: Optimize group writing for neighboring variables
+
         /** @type { S7DBStructure[] } */
         const write_requests = []
         for (let k = 0; k < variables.length; k++) {
@@ -867,7 +870,6 @@ const PLC_handler = PLC => {
                     if (name === item.name) {
                         const offset = +(item.offset || 0)
                         const new_item = { ...item, value, offset: 0 }
-
                         const datablock = { name: datablocks[i].name, db, offset, items: [new_item] }
                         write_requests.push(datablock)
                         found = true
