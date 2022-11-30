@@ -6,7 +6,7 @@
 
 // Note: The port option does not work yet. Inside the snap7 library the port is always set to 102.
 
-/** @typedef { 'SINT' | 'USINT' | 'INT' | 'UINT' | 'WORD' | 'DINT' | 'UDINT' | 'DWORD' | 'REAL' | 'FLOAT' | 'LREAL' | 'DOUBLE' | 'int' | 'uint' | 'word' | 'dint' | 'udint' | 'dword' | 'real' | 'float' | 'lreal' | 'double' | 'CHAR' | 'STRING' | 'char' | 'string' | 'BOOL' | 'BIT' | 'BYTE' | 'bool' | 'bit' | 'byte' | 'TIME' | 'time' | 'TIMER' | 'timer' | 'S5TIME' | 's5time' | 'IEC_TIMER' | 'iec_timer' } DataType */
+/** @typedef { 'SINT' | 'USINT' | 'INT' | 'UINT' | 'WORD' | 'DINT' | 'UDINT' | 'DWORD' | 'REAL' | 'FLOAT' | 'LREAL' | 'DOUBLE' | 'sint' | 'usint' | 'int' | 'uint' | 'word' | 'dint' | 'udint' | 'dword' | 'real' | 'float' | 'lreal' | 'double' | 'CHAR' | 'STRING' | 'char' | 'string' | 'BOOL' | 'BIT' | 'BYTE' | 'bool' | 'bit' | 'byte' | 'TIME' | 'time' | 'TIMER' | 'timer' | 'S5TIME' | 's5time' | 'IEC_TIMER' | 'iec_timer' } DataType */
 /** @typedef { Boolean | Number | String | Boolean[] | Number[] | String[] } S7DBDataValueType */
 /** @typedef {{ name: String; type: DataType; strlen?: Number; size?: Number, value?: S7DBDataValueType, offset?: Number | String }} S7DBStructureItem */
 /** @typedef {{ name?: String; port?: Number; host: String; rack?: Number; slot?: Number; bufferSize?: Number; staticSize?: Number;  timeout?: Number; debug?: Boolean }} S7DBConfig */
@@ -21,7 +21,7 @@ const typeIsNumber = type => numberTypes.includes(type.toLocaleUpperCase())
 const typeIsObject = type => objectTypes.includes(type.toLocaleUpperCase())
 const isBoolean = type => type === 'BIT' || type === 'BOOL'
 const isString = type => type === 'STRING'
-const roundUpToEven = n => n + (n % 2 === 0 ? 0 : 1)
+const roundUpToEven = n => n + n % 2
 
 const delay = ms => new Promise(r => setTimeout(r, ms))
 
@@ -133,6 +133,7 @@ const DBStructure_calculateSize = (items, start_offset = 0) => {
             used_bits = 0
             if (typesize > 1) total_size = roundUpToEven(total_size)
         }
+        if (isStr) total_size = roundUpToEven(total_size)
         const offset = (start_offset + total_size + 0.1 * used_bits).toFixed(1)
         item.offset = offset
         if (size > 1) { // Handle variable arrays
@@ -159,6 +160,7 @@ const DBStructure_calculateSize = (items, start_offset = 0) => {
             }
         }
     }
+    // console.log('Computed structure:', items)
     if (used_bits > 0) total_size++
     total_size = roundUpToEven(total_size)
     return total_size
@@ -317,11 +319,12 @@ const encodeCharacterToBuffer = (value, buffer, offset) => buffer.writeUInt8(val
 /** @param {String} value * @param {Buffer} buffer * @param {number} offset * @param {number} strlen*/
 const encodeStringToBuffer = (value, buffer, offset, strlen) => {
     const chars = value.split('')
+    const cl = chars.length
     const strlen_max = strlen - 2
-    const strlen_temp = chars.length > strlen_max ? strlen_max : chars.length
-    buffer.writeUInt8(strlen_max, offset)
-    buffer.writeUInt8(strlen_temp, offset + 1)
-    for (let i = 0; i < strlen_temp; i++)  encodeCharacterToBuffer(chars[i], buffer, offset + 2 + i);
+    const strlen_temp = cl > strlen_max ? strlen_max : cl
+    buffer.writeUInt8(strlen_max, offset++)
+    buffer.writeUInt8(strlen_temp, offset++)
+    for (let i = 0; i < strlen_temp; i++)  encodeCharacterToBuffer(chars[i], buffer, offset++);
 }
 /** @param { number } value * @param { Buffer } buffer * @param { number } offset */
 const encodeTimeToBuffer = (value, buffer, offset) => buffer.writeUInt32BE(value, offset)
@@ -347,7 +350,7 @@ const encodeS5TimeToBuffer = (value, buffer, offset) => {
     buffer.writeUInt16BE(output, offset)
     //return output
 }
-const encodeIECTimerToBuffer = (value, buffer, offset) => { 
+const encodeIECTimerToBuffer = (value, buffer, offset) => {
     // Todo: Implement this
 }
 
@@ -430,7 +433,7 @@ const DBStructure_encode = (db, debug) => {
             }
             offset = roundUpToEven(offset)
         } else {
-            if (typesize > 1) offset = roundUpToEven(offset) // @ts-ignore
+            if (typesize > 1 || isString(type)) offset = roundUpToEven(offset) // @ts-ignore
             const v = typeIsNumber(type) ? (isFinite(+value) ? +value : 0) : value // @ts-ignore
             if (!typeIsObject(type)) encodeValueToBuffer(buffer, v, type, offset, bits - 1, typesize)
             offset += isBool ? 0 : typesize
@@ -552,7 +555,7 @@ class S7 {
                     const output = await this.read_default(db, offset, size)
                     return output
                 } catch (e) {
-                    if (this.debug) console.log(`Failed to read ${size} from DB${db}${offset > 0 ? `+${offset}` : ''}`, e)
+                    if (this.debug) console.log(`S7Client - Failed to read size ${size} from DB${db}${offset > 0 ? `+${offset}` : ''} Error:`, e)
                     if (retries > 1) {
                         retries--
                         const output = await read_with_retries(db, offset, size, retries)
@@ -602,17 +605,21 @@ class S7 {
         const { host } = config
         reusable_s7_connections[host] = reusable_s7_connections[host] || { timeout: undefined, client: new S7(config) }
         const connection = reusable_s7_connections[host]
-        if (connection.timeout) clearTimeout(connection.timeout)
-        connection.timeout = setTimeout(() => {
-            connection.timeout = undefined
-            connection.client.disconnect()
-        }, 15000)
+        reusable_s7_connections[host] = undefined
+        // if (connection.timeout) clearTimeout(connection.timeout)
+        // connection.timeout = setTimeout(() => {
+        //     connection.timeout = undefined
+        //     connection.client.disconnect()
+        // }, 10)
         const client = connection.client
         const db = new DBStructure(input_db)
         try {
+            client.connect()
             const data = await client.read(db)
+            client.disconnect()
             return data
         } catch (e) {
+            client.disconnect()
             throw { error: e, request: db }
         }
     }
@@ -679,14 +686,17 @@ class S7 {
         const { host } = config
         reusable_s7_connections[host] = reusable_s7_connections[host] || { timeout: undefined, client: new S7(config) }
         const connection = reusable_s7_connections[host]
-        if (connection.timeout) clearTimeout(connection.timeout)
-        connection.timeout = setTimeout(() => {
-            connection.timeout = undefined
-            connection.client.disconnect()
-        }, 15000)
-        const client = connection.client
+        reusable_s7_connections[host] = undefined
+        // if (connection.timeout) clearTimeout(connection.timeout)
+        // connection.timeout = setTimeout(() => {
+        //     connection.timeout = undefined
+        //     connection.client.disconnect()
+        // }, 15000)
         const db = new DBStructure(input_db)
+        const client = connection.client
+        client.connect()
         await client.write(db)
+        client.disconnect()
     }
 }
 
@@ -855,7 +865,7 @@ const PLC_handler = PLC => {
             if (!name) return { error: `Variable [${i + 1}/${variables.length}] parameter "name" is not defined!` }
             if (value === undefined) return { error: `Variable [${i + 1}/${variables.length}] parameter "value" is not defined!` }
         }
-        
+
         // TODO: Optimize group writing for neighboring variables
 
         /** @type { S7DBStructure[] } */
